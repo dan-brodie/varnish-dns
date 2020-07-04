@@ -2,7 +2,6 @@ FROM debian:buster-slim
 
 ENV VARNISH_CONFIG  /etc/varnish/default.vcl
 ENV VARNISH_STORAGE malloc,500m
-ENV VARNISH_LISTEN  :80
 
 # install varnish build stuff
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -73,6 +72,9 @@ RUN apt-get install -y libgetdns10 && apt-get remove -y \
             python3-sphinx \
             && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 80
+COPY entrypoint /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint
+ENTRYPOINT ["entrypoint"]
 
-CMD [ varnishd -f ${VARNISH_CONFIG} -a ${VARNISH_LISTEN} -s ${VARNISH_STORAGE} ]
+EXPOSE 80 8443
+CMD []
