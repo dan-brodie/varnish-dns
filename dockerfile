@@ -1,80 +1,29 @@
-FROM debian:buster-slim
-
-ENV VARNISH_CONFIG  /etc/varnish/default.vcl
-ENV VARNISH_STORAGE malloc,500m
-
-# install varnish build stuff
-RUN apt-get update && apt-get install -y --no-install-recommends \
-            automake \
-            autotools-dev \
-            build-essential \
-            ca-certificates \
-            wget \
-            libedit-dev \
-            libgetdns-dev \
-            libjemalloc-dev \
-            libmhash-dev \
-            libncurses-dev \
-            libpcre3-dev \
-            libtool \
-            pkg-config \
-            python3 \
-            python3-docutils \
-            python3-sphinx
-
-# install varnish
-ENV VARNISH_VERSION=6.4.0
-RUN mkdir -p /usr/local/src && \
-    cd /usr/local/src && \
-    mkdir /usr/local/src/varnish && \
-    wget https://varnish-cache.org/_downloads/varnish-${VARNISH_VERSION}.tgz && \
-    tar -xzvf varnish-${VARNISH_VERSION}.tgz --directory /usr/local/src/varnish && \
-    cd varnish/varnish-${VARNISH_VERSION} && \
+FROM alpine:3.12 as vmod-dynamic-builder
+WORKDIR /build
+RUN apk update
+RUN apk add --quiet ca-certificates curl wget tar gzip jq
+RUN wget -O libvmod-dynamic.tar.gz https://github.com/nigoroll/libvmod-dynamic/archive/v2.2.1.tar.gz
+RUN tar -zxvf libvmod-dynamic.tar.gz && mv libvmod-dynamic-2.2.1 libvmod-dynamic
+RUN apk add --quiet build-base gcc make automake autoconf libtool varnish pcre-dev pkgconf varnish-dev file python3 py3-docutils
+WORKDIR /build/libvmod-dynamic
+RUN ls -al && chmod +x autogen.sh && \
     ./autogen.sh && \
-    ./configure && \
-    make install && \
-    cd /usr/local/src && \
-    rm -rf varnish
+    ./configure --prefix=/usr/local && \
+    make && \
+    make check && \
+    make install
 
-# install libvmod-dynamic
-ENV LIBVMOD_DYNAMIC_VERSION=2.2.1
+FROM alpine:3.12
 
-RUN cd /usr/local/src/ && \
-    mkdir /usr/local/src/libvmod-dynamic && \
-    wget https://github.com/nigoroll/libvmod-dynamic/archive/v${LIBVMOD_DYNAMIC_VERSION}.tar.gz && \
-    tar -xzf v${LIBVMOD_DYNAMIC_VERSION}.tar.gz --directory /usr/local/src/libvmod-dynamic && \
-    ls -al libvmod-dynamic && \
-    cd libvmod-dynamic/libvmod-dynamic-${LIBVMOD_DYNAMIC_VERSION} && \
-    ./autogen.sh && \
-    ./configure && \
-    make install && \
-    cd /usr/local/src && \
-    rm -rf libvmod-dynamic && \
-    ldconfig
+ENV VARNISH_CONFIG /usr/local/etc/varnish/default.vcl
+ENV VARNISH_STORAGE malloc,500M
 
-# add runtime dep for dns and cleanup
-RUN apt-get install -y libgetdns10 && apt-get remove -y \
-            automake \
-            autotools-dev \
-            build-essential \
-            ca-certificates \
-            wget \
-            libedit-dev \
-            libgetdns-dev \
-            libjemalloc-dev \
-            libmhash-dev \
-            libncurses-dev \
-            libpcre3-dev \
-            libtool \
-            pkg-config \
-            python3 \
-            python3-docutils \
-            python3-sphinx \
-            && rm -rf /var/lib/apt/lists/*
+RUN  apk --no-cache add varnish bind-tools
 
-COPY entrypoint /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint
-ENTRYPOINT ["entrypoint"]
+COPY --from=vmod-dynamic-builder  /usr/local/lib/varnish/vmods/libvmod_dynamic.so  /usr/local/lib/varnish/vmods/libvmod_dynamic.so
 
-EXPOSE 80 8443
+ENTRYPOINT ["/bin/sh", "-o", "pipefail", "-c", "varnishd -f ${VARNISH_CONFIG} -s ${VARNISH_STORAGE} | varnishncsa -F '%h %l %u %t \"%r\" %s %b \"%{Referer}i\" \"%{User-agent}i\" \"%{Varnish:handling}x\"'"]
+
+EXPOSE 80
+
 CMD []
