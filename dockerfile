@@ -20,7 +20,7 @@ ENV VARNISH_STORAGE malloc,500M
 
 RUN  apk --no-cache add varnish bind-tools
 
-COPY --from=vmod-dynamic-builder  /usr/local/lib/varnish/vmods/libvmod_dynamic.so  /usr/local/lib/varnish/vmods/libvmod_dynamic.so
+COPY --from=vmod-dynamic-builder /usr/local/lib/varnish/vmods/libvmod_dynamic.so /usr/lib/varnish/vmods/libvmod_dynamic.so
 
 ENTRYPOINT ["/bin/sh", "-o", "pipefail", "-c", "varnishd -f ${VARNISH_CONFIG} -s ${VARNISH_STORAGE} | varnishncsa -F '%h %l %u %t \"%r\" %s %b \"%{Referer}i\" \"%{User-agent}i\" \"%{Varnish:handling}x\"'"]
 
